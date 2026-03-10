@@ -22,10 +22,37 @@ import "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 
 /**
- * Always verify the EntryPoint addresses across multiple trusted sources.
- * Visit https://docs.erc4337.io/ for instructions and official documentation.
- * Account-Abstraction (EIP-4337) singleton EntryPoint v0.9 implementation.
- * Only one instance required on each chain.
+ * @title EntryPoint
+ * @notice EIP-4337 账户抽象入口合约 v0.9
+ *
+ * ## 设计概述
+ *
+ * EntryPoint 是每条链上唯一的单例合约，负责：
+ * 1. 接收并执行 UserOperation 批次（handleOps / handleAggregatedOps）
+ * 2. 管理账户与 Paymaster 的存款（deposit）与质押（stake）
+ * 3. 管理 nonce，防止重放
+ * 4. 通过 SenderCreator 在“中性”地址部署账户，避免与 EntryPoint 耦合
+ *
+ * ## 执行流程（单次 UserOp）
+ *
+ * 1. 验证阶段（_iterateValidationPhase / _validatePrepayment）：
+ *    - 计算 userOpHash（EIP-712）
+ *    - 若有 initCode：通过 SenderCreator 部署账户或初始化 EIP-7702
+ *    - 调用 account.validateUserOp(...)，扣减账户或 Paymaster 的 deposit 作为 prefund
+ *    - 若有 Paymaster：扣减 Paymaster deposit，调用 validatePaymasterUserOp，校验时间范围与签名
+ *    - 校验并递增 nonce
+ *
+ * 2. 执行阶段（_executeUserOp → innerHandleOp）：
+ *    - 向 account 发送 callData（即 execute/executeBatch 等）
+ *    - 若有 Paymaster 且 context 非空：调用 paymaster.postOp(...)
+ *    - 按实际 gas 消耗从 prefund 扣费，余款退还给 account 或 paymaster
+ *    - 发出 UserOperationEvent 等事件
+ *
+ * ## 安全与信任
+ *
+ * - 仅接受 EOA 直接调用（nonReentrant：tx.origin == msg.sender 且无 code），防止重入与恶意合约冒充
+ * - 各链上部署地址请以多源校验为准
+ *
  * @custom:security-contact https://bounty.ethereum.org
  */
 contract EntryPoint is IEntryPoint, StakeManager, NonceManager, ERC165, EIP712 {
@@ -33,26 +60,27 @@ contract EntryPoint is IEntryPoint, StakeManager, NonceManager, ERC165, EIP712 {
     using UserOperationLib for PackedUserOperation;
     using Eip7702Support for address;
 
-    /**
-     * internal-use constants
-     */
+    // ============ 内部用常量 ============
 
-    // allow some slack for future gas price changes.
+    /// @dev 为未来 gas 价格变化预留的额外 gas
     uint256 private constant INNER_GAS_OVERHEAD = 10000;
 
-    // Marker for inner call revert on out of gas
+    /// @dev innerHandleOp 内部 revert 标记：gas 不足导致整批中止
     bytes32 private constant INNER_OUT_OF_GAS = hex"deaddead";
+    /// @dev innerHandleOp 内部 revert 标记：prefund 不足，按已消耗扣费并退费
     bytes32 private constant INNER_REVERT_LOW_PREFUND = hex"deadaa51";
 
     uint256 private constant REVERT_REASON_MAX_LEN = 2048;
-    // Penalty charged for either unused execution gas or postOp gas
+    /// @dev 未使用的执行 gas 或 postOp gas 按该比例收取惩罚，减少虚报 gas 的动机
     uint256 private constant UNUSED_GAS_PENALTY_PERCENT = 10;
-    // Threshold below which no penalty would be charged
+    /// @dev 低于该阈值的未使用 gas 不收取惩罚
     uint256 private constant PENALTY_GAS_THRESHOLD = 40000;
 
+    /// @dev validAfter/validUntil 高位用于表示“按区块范围”而非时间戳
     uint48 private constant VALIDITY_BLOCK_RANGE_FLAG = 0x800000000000;
     uint48 private constant VALIDITY_BLOCK_RANGE_MASK = 0x7fffffffffff;
 
+    /// @dev 在非 EntryPoint 地址创建 sender，避免 initCode 与 EntryPoint 耦合
     SenderCreator private immutable _senderCreator = new SenderCreator();
 
     string constant internal DOMAIN_NAME = "ERC4337";
@@ -65,6 +93,7 @@ contract EntryPoint is IEntryPoint, StakeManager, NonceManager, ERC165, EIP712 {
     constructor() EIP712(DOMAIN_NAME, DOMAIN_VERSION)  {
     }
 
+    /// @dev 仅允许 EOA 直接调用，防止重入与合约冒充 bundler
     modifier nonReentrant() {
         require(
             // solhint-disable avoid-tx-origin
@@ -367,10 +396,8 @@ contract EntryPoint is IEntryPoint, StakeManager, NonceManager, ERC165, EIP712 {
         }
     }
 
-    /**
-     * A memory copy of UserOp static fields only.
-     * Excluding: callData, initCode and signature. Replacing paymasterAndData with paymaster.
-     */
+    /// @notice 仅包含 UserOp 的静态字段的内存副本，用于执行阶段
+    /// @dev 不含 callData、initCode、signature；paymasterAndData 已解析为 paymaster 等
     struct MemoryUserOp {
         address sender;
         uint256 nonce;
@@ -384,6 +411,12 @@ contract EntryPoint is IEntryPoint, StakeManager, NonceManager, ERC165, EIP712 {
         uint256 maxPriorityFeePerGas;
     }
 
+    /// @notice 单条 UserOperation 在验证阶段填充的元数据，供执行与退费使用
+    /// @param mUserOp       解析后的静态字段
+    /// @param userOpHash    EIP-712 哈希，用于事件与 Paymaster context
+    /// @param prefund       本 Op 预扣的 gas 费（从 account 或 paymaster 扣）
+    /// @param contextOffset Paymaster 返回的 context 在内存中的偏移
+    /// @param preOpGas      验证阶段消耗的 gas（含 preVerificationGas）
     struct UserOpInfo {
         MemoryUserOp mUserOp;
         bytes32 userOpHash;
@@ -393,10 +426,10 @@ contract EntryPoint is IEntryPoint, StakeManager, NonceManager, ERC165, EIP712 {
     }
 
     /**
-     * Inner function to handle a UserOperation.
-     * Must be declared "external" to open a call context, but it can only be called by handleOps.
-     * @param callData - The callData to execute.
-     * @param opInfo   - The UserOpInfo struct.
+     * @notice 单条 UserOperation 的执行逻辑（验签与 prefund 已在 _iterateValidationPhase 完成）
+     * @dev 声明为 external 以建立独立 call 上下文，仅由 handleOps 通过内部 call 调用
+     * @param callData - 要执行的 callData（通常为 account.execute 或 executeBatch）
+     * @param opInfo   - 验证阶段填好的 UserOpInfo
      * @param context  - The context bytes.
      * @return actualGasCost - the actual cost in eth this UserOperation paid for gas
      */
@@ -789,10 +822,8 @@ contract EntryPoint is IEntryPoint, StakeManager, NonceManager, ERC165, EIP712 {
     }
 
     /**
-     * Validate account and paymaster (if defined) and
-     * also make sure total validation doesn't exceed verificationGasLimit.
-     * This method is called off-chain (simulateValidation()) and on-chain (from handleOps)
-     * @param opIndex    - The index of this userOp into the "opInfos" array.
+     * @notice 校验账户与 Paymaster（若有），并确保整体验证 gas 不超过 verificationGasLimit
+     * @dev 链下 simulateValidation 与链上 handleOps 均会调用；先 _validateAccountPrepayment（含创建 sender、验签、扣 prefund），再校验 nonce，最后若有 paymaster 则 _validatePaymasterPrepayment
      * @param userOp     - The packed calldata UserOperation structure to validate.
      * @param outOpInfo  - The empty unpacked in-memory UserOperation structure that will be filled in here.
      *

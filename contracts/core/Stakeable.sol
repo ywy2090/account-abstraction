@@ -6,14 +6,13 @@ import "@openzeppelin/contracts/access/Ownable2Step.sol";
 
 /**
  * @title Stakeable
- * @notice Helper that lets a contract add stake on the configured EntryPoint
- *         for itself. Intended for factories or paymasters so their owner can call
- *         the contract directly instead of interacting with EntryPoint.
+ * @notice 允许合约在配置的 EntryPoint 上为自己添加/解锁/提取质押的辅助基类
+ *
+ * 用途：工厂或 Paymaster 的 owner 可直接调用本合约的 addStake/unlockStake/withdrawStake，
+ * 而无需直接与 EntryPoint 交互。所有操作仅限 owner。
  */
 abstract contract Stakeable is Ownable2Step {
-    /**
-     * @dev Implementations must supply the EntryPoint instance that should receive the stake.
-     */
+    /// @dev 子类需返回要质押的 EntryPoint 地址
     function entryPoint() public view virtual returns (IEntryPoint);
 
     /**

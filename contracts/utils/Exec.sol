@@ -4,10 +4,12 @@ pragma solidity ^0.8.28;
 // solhint-disable no-inline-assembly
 
 /**
- * Utility functions helpful when making different kinds of contract calls in Solidity.
+ * @title Exec
+ * @notice 低层调用工具：call、staticcall、delegatecall，以及获取返回数据、按返回数据 revert
  */
 library Exec {
 
+    /// @dev 向 to 发送 value 与 data，限制 gas 为 txGas
     function call(
         address to,
         uint256 value,
@@ -19,6 +21,7 @@ library Exec {
         }
     }
 
+    /// @dev 对 to 做无状态 staticcall，限制 gas
     function staticcall(
         address to,
         bytes memory data,
@@ -29,6 +32,7 @@ library Exec {
         }
     }
 
+    /// @dev 对 to 做 delegatecall，限制 gas
     function delegateCall(
         address to,
         bytes memory data,
@@ -39,8 +43,7 @@ library Exec {
         }
     }
 
-    // get returned data from last call or delegateCall
-    // maxLen - maximum length of data to return, or zero, for the full length
+    /// @dev 获取上一次 call/delegatecall 的返回数据；maxLen 为 0 表示全部长度
     function getReturnData(uint256 maxLen) internal pure returns (bytes memory returnData) {
         assembly ("memory-safe") {
             let len := returndatasize()
@@ -57,14 +60,14 @@ library Exec {
         }
     }
 
-    // revert with explicit byte array (probably reverted info from call)
+    /// @dev 使用指定字节数组作为 revert 数据（常用于传播子调用 revert 原因）
     function revertWithData(bytes memory returnData) internal pure {
         assembly ("memory-safe") {
             revert(add(returnData, 32), mload(returnData))
         }
     }
 
-    // Propagate revert data from last call
+    /// @dev 将上一次调用的返回数据作为 revert 原因抛出
     function revertWithReturnData() internal pure {
         revertWithData(getReturnData(0));
     }

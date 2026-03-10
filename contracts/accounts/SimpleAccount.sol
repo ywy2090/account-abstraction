@@ -14,11 +14,13 @@ import "../core/Helpers.sol";
 import "./callback/TokenCallbackHandler.sol";
 
 /**
-  * minimal account.
-  *  this is sample minimal account.
-  *  has execute, eth handling methods
-  *  has a single signer that can send requests through the entryPoint.
-  */
+ * @title SimpleAccount
+ * @notice 最小化 EIP-4337 账户实现：单 owner、ECDSA 验签、支持 execute/executeBatch、ETH 与 ERC-777/ERC-721 回调
+ *
+ * - owner 通过 EntryPoint 提交 UserOp，验签时用 ECDSA.recover(userOpHash, signature) 与 owner 比对
+ * - 执行入口仅允许 EntryPoint 或 owner 调用（_requireForExecute）
+ * - 通过 EntryPoint 存款/取款（addDeposit、withdrawDepositTo）；支持 UUPS 升级，由 owner 授权
+ */
 contract SimpleAccount is BaseAccount, TokenCallbackHandler, UUPSUpgradeable, Initializable {
     address public owner;
 

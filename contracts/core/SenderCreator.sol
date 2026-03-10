@@ -10,8 +10,12 @@ import "../interfaces/IEntryPoint.sol";
 import "../utils/Exec.sol";
 
 /**
- * Helper contract for EntryPoint, to call userOp.initCode from a "neutral" address,
- * which is explicitly not the entryPoint itself.
+ * @title SenderCreator
+ * @notice 在“中性”地址执行 UserOp 的 initCode，由 EntryPoint 唯一调用
+ *
+ * 设计目的：账户创建逻辑不直接在 EntryPoint 上执行，而是通过本合约调用 factory，
+ * 这样 getSenderAddress(initCode) 与实际部署方一致，且避免 initCode 与 EntryPoint 地址耦合。
+ * initCode 格式：前 20 字节为 factory 地址，后跟 factory 调用数据；factory 必须返回所创建账户的 address(sender)。
  */
 contract SenderCreator is ISenderCreator {
     error NotFromEntryPoint(address msgSender, address entity, address entryPoint);

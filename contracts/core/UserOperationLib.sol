@@ -7,7 +7,12 @@ import "../interfaces/PackedUserOperation.sol";
 import "./Helpers.sol";
 
 /**
- * Utility functions helpful when working with UserOperation structs.
+ * @title UserOperationLib
+ * @notice PackedUserOperation 的编解码与哈希工具库
+ *
+ * - 将 accountGasLimits、gasFees 等打包字段解包为 verificationGasLimit、callGasLimit、maxFeePerGas 等
+ * - paymasterAndData：前 20 字节为 paymaster 地址，随后为 gas 限制与可选 paymasterData；末尾可带 paymaster 签名（含 magic 与长度），签名不参与 userOpHash
+ * - 提供 EIP-712 所需的 PACKED_USEROP_TYPEHASH 与 encode/hash，支持 EIP-7702 的 overrideInitCodeHash
  */
 library UserOperationLib {
 

@@ -7,12 +7,19 @@ import "../interfaces/IStakeManager.sol";
 /* solhint-disable not-rely-on-time */
 
 /**
- * Manage deposits and stakes.
- * Deposit is just a balance used to pay for UserOperations (either by a paymaster or an account).
- * Stake is value locked for at least "unstakeDelay" by a paymaster.
+ * @title StakeManager
+ * @notice 存款与质押管理（由 EntryPoint 继承）
+ *
+ * ## 存款（Deposit）
+ * - 账户或 Paymaster 可向 EntryPoint 存入 ETH，用于支付 UserOperation 的 gas
+ * - handleOps 执行前会从对应地址的 deposit 中扣减 prefund，执行后按实际消耗结算，多退少不补（不足则 revert）
+ *
+ * ## 质押（Stake）
+ * - 主要为 Paymaster 设计：锁定 ETH 并设置 unstakeDelaySec，到期前不可提取
+ * - 用于防止恶意 Paymaster 作恶后立刻撤资；Bundler 可要求 Paymaster 具备足够 stake 才打包其 UserOp
  */
 abstract contract StakeManager is IStakeManager {
-    /// maps paymaster to their deposits and stakes
+    /// @dev 每个地址（账户或 Paymaster）的存款与质押信息
     mapping(address => DepositInfo) private deposits;
 
     /// @inheritdoc IStakeManager

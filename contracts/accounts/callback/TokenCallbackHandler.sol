@@ -8,8 +8,8 @@ import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts/token/ERC1155/IERC1155Receiver.sol";
 
 /**
- * Token callback handler.
- *   Handles supported tokens' callbacks, allowing account receiving these tokens.
+ * @title TokenCallbackHandler
+ * @notice 实现 ERC-721 / ERC-1155 接收回调，使账户能安全接收 NFT 与多代币转账
  */
 abstract contract TokenCallbackHandler is IERC721Receiver, IERC1155Receiver {
 

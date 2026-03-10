@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+/**
+ * @title INonceManager
+ * @notice Nonce 管理接口：getNonce(sender, key) 返回下一可用 nonce；incrementNonce(key) 供链下预置用
+ */
 interface INonceManager {
 
     /**

@@ -11,9 +11,13 @@ import "../utils/Exec.sol";
 import "./UserOperationLib.sol";
 
 /**
- * Basic account implementation.
- * This contract provides the basic logic for implementing the IAccount interface - validateUserOp
- * Specific account implementation should inherit it and provide the account-specific logic.
+ * @title BaseAccount
+ * @notice EIP-4337 账户的抽象基类，实现 IAccount 的通用逻辑
+ *
+ * - 校验调用方为 EntryPoint（_requireFromEntryPoint）
+ * - 提供 execute(target, value, data) 与 executeBatch(calls)，内部用 Exec.call 执行
+ * - validateUserOp 流程：校验来源 → _validateSignature → _validateNonce → _payPrefund
+ * - 子类需实现 entryPoint()、_validateSignature；可重写 _validateNonce、_payPrefund
  */
 abstract contract BaseAccount is IAccount {
     using UserOperationLib for PackedUserOperation;

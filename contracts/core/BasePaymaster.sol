@@ -9,10 +9,14 @@ import "../interfaces/IPaymaster.sol";
 import "../interfaces/IEntryPoint.sol";
 import "./Stakeable.sol";
 import "./UserOperationLib.sol";
+
 /**
- * Helper class for creating a paymaster.
- * provides helper methods for staking.
- * Validates that the postOp is called only by the entryPoint.
+ * @title BasePaymaster
+ * @notice Paymaster 抽象基类：校验调用方为 EntryPoint，提供存款/取款与质押能力（通过 Stakeable）
+ *
+ * - validatePaymasterUserOp：子类实现具体逻辑，返回 (context, validationData)；context 非空时执行阶段会调用 postOp
+ * - postOp：子类在需要时实现（如扣费、链下记账）；mode 为 opSucceeded 或 opReverted
+ * - 构造函数中校验 EntryPoint 支持 IEntryPoint 接口（ERC165）
  */
 abstract contract BasePaymaster is IPaymaster, Stakeable {
     IEntryPoint internal immutable _entryPoint;

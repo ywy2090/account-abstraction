@@ -6,17 +6,15 @@ import "./UserOperationLib.sol";
 
 using UserOperationLib for bytes;
 
- /*
-  * For simulation purposes, validateUserOp (and validatePaymasterUserOp)
-  * must return this value in case of signature failure, instead of revert.
-  */
+/**
+ * @title Helpers
+ * @notice 账户抽象通用常量与工具（ValidationData 打包/解析、calldataKeccak、内存分配等）
+ */
+
+/// @dev 验签失败时 validateUserOp / validatePaymasterUserOp 应返回此值（便于链下 simulateValidation）
 uint256 constant SIG_VALIDATION_FAILED = 1;
 
-
-/*
- * For simulation purposes, validateUserOp (and validatePaymasterUserOp)
- * return this value on success.
- */
+/// @dev 验签成功时 validateUserOp / validatePaymasterUserOp 的返回值
 uint256 constant SIG_VALIDATION_SUCCESS = 0;
 
 
